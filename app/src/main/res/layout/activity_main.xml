@@ -1,66 +1,106 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/scrollView"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/ssh_connect_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="toggle"
-        android:paddingVertical="15dp"
-        android:paddingHorizontal="55dp"
-        app:cornerRadius="55dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+    android:layout_height="match_parent"
+    android:padding="16dp">
 
     <LinearLayout
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        app:layout_constraintBottom_toTopOf="@+id/ssh_connect_button"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        android:padding="10dp">
+        android:orientation="vertical">
 
-        <Spinner
-            android:id="@+id/spinner"
+        <!-- 1) Connection Status -->
+        <TextView
+            android:id="@+id/tvStatus"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="10dp"
-            />
-
-        <ImageButton
-            android:id="@+id/editProfileButton"
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:padding="10dp"
-            android:background="@android:color/transparent"
-            app:tint="?colorPrimary"
-            android:contentDescription="Edit this profile"
-            app:srcCompat="@drawable/baseline_edit_24" />
+            android:text="Status: Disconnected"
+            android:textSize="18sp"
+            android:padding="12dp"
+            android:background="@drawable/bg_status" />
 
-        <EditText
-    android:id="@+id/sni_input"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:hint="Enter SNI Host (e.g. www.freesite.com)"
-    android:inputType="text" />
-
-        <ImageButton
-            android:id="@+id/addProfileButton"
-            android:layout_width="wrap_content"
+        <!-- 2) Profile Selector Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="10dp"
-            android:background="@android:color/transparent"
-            app:tint="?colorPrimary"
-            android:contentDescription="Add new profile"
-           app:srcCompat="@drawable/baseline_add_24" />
+            android:layout_marginTop="12dp"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <Spinner
+                    android:id="@+id/spinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="end"
+                    android:orientation="horizontal">
+
+                    <ImageButton
+                        android:id="@+id/addProfileButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="Add"
+                        app:srcCompat="@drawable/baseline_add_24" />
+
+                    <ImageButton
+                        android:id="@+id/editProfileButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:contentDescription="Edit"
+                        app:srcCompat="@drawable/baseline_edit_24" />
+                </LinearLayout>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 3) SNI Input Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="2dp">
+
+            <EditText
+                android:id="@+id/sni_input"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="SNI Host (e.g. www.freesite.com)"
+                android:padding="12dp" />
+        </androidx.cardview.widget.CardView>
+
+        <!-- 4) Connect Button -->
+        <Button
+            android:id="@+id/ssh_connect_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Connect" />
+
+        <!-- 5) Live Logs -->
+        <TextView
+            android:id="@+id/tvLogs"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:layout_marginTop="16dp"
+            android:background="#222"
+            android:overScrollMode="always"
+            android:padding="8dp"
+            android:scrollbars="vertical"
+            android:text="Logs will appear here..."
+            android:textColor="#0f0"
+            android:textSize="12sp" />
     </LinearLayout>
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.core.widget.NestedScrollView>
