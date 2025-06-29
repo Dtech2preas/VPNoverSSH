@@ -7,10 +7,11 @@ import android.os.AsyncTask;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
-import androidx.preference.PreferenceManager;
+import androidx.preference.PferenceManager;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.InetAddress; // Add this import
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.Socket;
