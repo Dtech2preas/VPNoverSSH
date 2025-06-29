@@ -19,7 +19,7 @@
             android:text="Status: Disconnected"
             android:textSize="18sp"
             android:padding="12dp"
-            android:background="@drawable/bg_status" />
+            android:background="#22000000" />
 
         <!-- 2) Profile Selector Card -->
         <androidx.cardview.widget.CardView
