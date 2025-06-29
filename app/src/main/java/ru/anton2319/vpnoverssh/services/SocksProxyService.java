@@ -10,13 +10,8 @@ import android.util.Log;
 import androidx.preference.PreferenceManager;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.Proxy;
-import java.net.Socket;
-import java.net.URL;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -124,8 +119,7 @@ public class SocksProxyService extends VpnService {
             String socksHostname = "127.0.0.1";
             int socksPort = Integer.parseInt(Optional.of(sharedPreferences.getString("forwarder_port", "1080")).orElse("1080"));
 
-            testSocksProxy(socksHostname, socksPort);
-
+            // Initialize proxy
             engine.Key key = new engine.Key();
             key.setMark(0);
             key.setMTU(1500);
@@ -133,7 +127,6 @@ public class SocksProxyService extends VpnService {
             key.setInterface("");
             key.setLogLevel("info");
             key.setProxy("socks5://" + socksHostname + ":" + socksPort);
-            key.setRestAPI("");
             key.setTCPSendBufferSize("1m");
             key.setTCPReceiveBufferSize("1m");
             key.setTCPModerateReceiveBuffer(true);
@@ -142,8 +135,7 @@ public class SocksProxyService extends VpnService {
             engine.Engine.start();
             Log.d(TAG, "VPN engine started");
 
-            testDnsResolution();
-
+            // Main loop
             while (!Thread.interrupted()) {
                 try {
                     TimeUnit.SECONDS.sleep(1);
@@ -154,45 +146,7 @@ public class SocksProxyService extends VpnService {
             }
         } catch (Exception e) {
             Log.e(TAG, "VPN error: ", e);
-            Log.e(TAG, "VPN stopped due to error");
             stopSelf();
-        }
-    }
-
-    private void testSocksProxy(String host, int port) {
-        try (Socket test = new Socket()) {
-            test.connect(new InetSocketAddress(host, port), 3000);
-            Log.d(TAG, "SOCKS proxy connection verified at " + host + ":" + port);
-            
-            try {
-                Proxy proxy = new Proxy(Proxy.Type.SOCKS, new InetSocketAddress(host, port));
-                URL url = new URL("http://example.com");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection(proxy);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.connect();
-                
-                int status = conn.getResponseCode();
-                if (status == 200) {
-                    Log.d(TAG, "SOCKS proxy functionality verified");
-                } else {
-                    Log.e(TAG, "SOCKS proxy test failed. HTTP status: " + status);
-                }
-                conn.disconnect();
-            } catch (Exception e) {
-                Log.e(TAG, "SOCKS proxy functionality test failed", e);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "SOCKS proxy connection test failed", e);
-        }
-    }
-
-    private void testDnsResolution() {
-        try {
-            InetAddress[] addresses = InetAddress.getAllByName("google.com");
-            Log.d(TAG, "DNS resolution successful: " + Arrays.toString(addresses));
-        } catch (Exception e) {
-            Log.e(TAG, "DNS resolution test failed!", e);
         }
     }
 
