@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 
+import ru.anton2319.vpnoverssh.data.model.SSHAccount;
 import ru.anton2319.vpnoverssh.data.singleton.PortForward;
 
 public class SshService extends Service {
@@ -34,7 +35,7 @@ public class SshService extends Service {
         if (existingThread != null && existingThread.isAlive()) {
             existingThread.interrupt();
             try {
-                existingThread.join(1000); // Wait for thread to finish
+                existingThread.join(1000);
             } catch (InterruptedException e) {
                 Log.w(TAG, "Interrupted while waiting for thread to stop");
             }
@@ -47,41 +48,42 @@ public class SshService extends Service {
         return START_STICKY;
     }
 
-    private void initiateSSH(Intent intent) throws IOException, RuntimeException {
-        Log.d(TAG, "Starting trilead.ssh2 SSH service");
+    private void initiateSSH(SSHAccount account) throws IOException, RuntimeException {
+        Log.d(TAG, "Starting SSH service for account: " + account.getNickname());
 
-        String user = intent.getStringExtra("user");
-        String host = intent.getStringExtra("hostname");
-        String password = intent.getStringExtra("password");
-        String portStr = intent.getStringExtra("port");
-        String privateKey = intent.getStringExtra("privateKey");
-
-        int port = 22;
-        try {
-            port = Integer.parseInt(Optional.ofNullable(portStr).orElse("22"));
-        } catch (NumberFormatException e) {
-            Log.e(TAG, "Invalid port, defaulting to 22");
-        }
+        String username = account.getUsername();
+        String host = account.getServer();
+        String password = account.getPassword();
+        String privateKey = account.getPrivateKey();
+        int port = account.getPort();
+        String sniHost = account.getSniHost();
 
         conn = new Connection(host, port);
-        conn.connect(null, 30000, 30000); // Added timeout parameters (30 seconds)
+        
+        // Apply SNI if configured
+        if (sniHost != null && !sniHost.isEmpty()) {
+            Log.d(TAG, "Applying SNI: " + sniHost);
+            conn.setSocketFactory(new SNISocketFactory(sniHost));
+        }
+        
+        conn.connect(null, 30000, 30000);
         PortForward.getInstance().setConn(conn);
 
         // Authentication
         boolean isAuthenticated = false;
         if (privateKey != null && !privateKey.isEmpty()) {
             Log.d(TAG, "Attempting public key authentication");
-            isAuthenticated = conn.authenticateWithPublicKey(user, privateKey.toCharArray(), "");
+            isAuthenticated = conn.authenticateWithPublicKey(username, privateKey.toCharArray(), "");
         } else if (password != null && !password.isEmpty()) {
             Log.d(TAG, "Attempting password authentication");
-            isAuthenticated = conn.authenticateWithPassword(user, password);
+            isAuthenticated = conn.authenticateWithPassword(username, password);
         } else {
             Log.d(TAG, "Attempting none authentication");
-            isAuthenticated = conn.authenticateWithNone(user);
+            isAuthenticated = conn.authenticateWithNone(username);
         }
 
         if (!isAuthenticated) {
-            throw new RuntimeException("Authentication failed: check username, password, or key");
+            throw new RuntimeException("Authentication failed: check credentials");
         }
 
         Log.d(TAG, "Authentication successful. Creating SOCKS proxy...");
@@ -93,11 +95,11 @@ public class SshService extends Service {
             Log.e(TAG, "Invalid forwarder port, defaulting to 1080");
         }
 
-        // Updated port forwarding implementation
         try {
             forwarder = conn.createDynamicPortForwarder(new InetSocketAddress("127.0.0.1", forwardPort));
             PortForward.getInstance().setForwarder(forwarder);
-            Log.d(TAG, "SOCKS proxy successfully started on 127.0.0.1:" + forwardPort);
+            PortForward.getInstance().setProxyReady(true);
+            Log.d(TAG, "SOCKS proxy started on 127.0.0.1:" + forwardPort);
         } catch (IOException e) {
             Log.e(TAG, "Failed to create SOCKS proxy", e);
             throw new RuntimeException("Failed to create SOCKS proxy: " + e.getMessage());
@@ -110,7 +112,7 @@ public class SshService extends Service {
         if (sshThread != null && sshThread.isAlive()) {
             sshThread.interrupt();
             try {
-                sshThread.join(1000); // Wait for thread to finish
+                sshThread.join(1000);
             } catch (InterruptedException e) {
                 Log.w(TAG, "Interrupted while waiting for thread to stop");
             }
@@ -127,15 +129,15 @@ public class SshService extends Service {
         return new Thread(() -> {
             try {
                 System.setProperty("user.home", getFilesDir().getAbsolutePath());
-                initiateSSH(intent);
+                SSHAccount account = (SSHAccount) intent.getSerializableExtra("ssh_account");
+                initiateSSH(account);
 
                 // Keep thread alive until interrupted
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
                         Thread.sleep(1000);
-                        // Verify connection is still alive by checking authentication status
                         if (!conn.isAuthenticationComplete()) {
-                            Log.w(TAG, "SSH connection lost - authentication no longer complete");
+                            Log.w(TAG, "SSH connection lost");
                             break;
                         }
                     } catch (InterruptedException ie) {
@@ -161,7 +163,6 @@ public class SshService extends Service {
                 forwarder = null;
             }
             if (conn != null) {
-                // Connection doesn't have isConnected() method, so we'll just close it
                 conn.close();
                 Log.d(TAG, "SSH connection closed");
                 conn = null;
@@ -169,9 +170,44 @@ public class SshService extends Service {
         } catch (Exception e) {
             Log.e(TAG, "Error closing SSH resources", e);
         }
-        // Instead of cleanup(), reset the PortForward instance
-        PortForward.getInstance().setConn(null);
-        PortForward.getInstance().setForwarder(null);
-        PortForward.getInstance().setSshThread(null);
+        PortForward.getInstance().cleanup();
+    }
+    
+    // Custom Socket Factory for SNI
+    private static class SNISocketFactory extends com.trilead.ssh2.SocketFactory {
+        private final String sniHost;
+
+        public SNISocketFactory(String sniHost) {
+            this.sniHost = sniHost;
+        }
+
+        @Override
+        public java.net.Socket createSocket() throws IOException {
+            return new javax.net.ssl.SSLSocketFactory().createSocket() {
+                @Override
+                public void connect(java.net.SocketAddress endpoint, int timeout) throws IOException {
+                    super.connect(endpoint, timeout);
+                    applySNI();
+                }
+
+                @Override
+                public void connect(java.net.SocketAddress endpoint) throws IOException {
+                    super.connect(endpoint);
+                    applySNI();
+                }
+
+                private void applySNI() {
+                    try {
+                        javax.net.ssl.SSLParameters params = new javax.net.ssl.SSLParameters();
+                        params.setServerNames(java.util.Collections.singletonList(
+                            new javax.net.ssl.SNIHostName(sniHost)
+                        ));
+                        ((javax.net.ssl.SSLSocket) this).setSSLParameters(params);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to apply SNI", e);
+                    }
+                }
+            };
+        }
     }
 }
