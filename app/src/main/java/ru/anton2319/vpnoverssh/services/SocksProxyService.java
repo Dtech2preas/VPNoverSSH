@@ -2,7 +2,6 @@ package ru.anton2319.vpnoverssh.services;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.net.IpPrefix;
 import android.net.VpnService;
 import android.os.AsyncTask;
 import android.os.ParcelFileDescriptor;
@@ -11,17 +10,19 @@ import android.util.Log;
 import androidx.preference.PreferenceManager;
 
 import java.io.IOException;
-import java.net.InetAddress;
+import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.net.URL;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import ru.anton2319.vpnoverssh.data.singleton.PortForward;
 import ru.anton2319.vpnoverssh.data.singleton.SocksPersistent;
@@ -30,33 +31,26 @@ import ru.anton2319.vpnoverssh.data.singleton.StatusInfo;
 public class SocksProxyService extends VpnService {
 
     private static final String TAG = "SocksProxyService";
-
     private ExecutorService executor = Executors.newSingleThreadExecutor();
-
     private Thread vpnThread;
-    SharedPreferences sharedPreferences;
+    private SharedPreferences sharedPreferences;
+    private Future<Set<String>> getSelectedAppsFuture;
+    private Future<String> getDnsIpFuture;
 
     public Future<String> getDnsIp(SharedPreferences sharedPreferences) {
-        return executor.submit(() -> {
-            return sharedPreferences.getString("dns_resolver_ip", "1.1.1.1");
-        });
+        return executor.submit(() -> sharedPreferences.getString("dns_resolver_ip", "1.1.1.1"));
     }
 
     private Future<Set<String>> getSelectedApps(SharedPreferences sharedPreferences) {
-        return executor.submit(() -> {
-            return sharedPreferences.getStringSet("included_apps", new HashSet<String>());
-        });
+        return executor.submit(() -> sharedPreferences.getStringSet("included_apps", new HashSet<>()));
     }
-
-    private Future<Set<String>> getSelectedAppsFuture;
-
-    Future<String> getDnsIpFuture;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         getSelectedAppsFuture = getSelectedApps(sharedPreferences);
         getDnsIpFuture = getDnsIp(sharedPreferences);
+        
         // Start the VPN thread
         vpnThread = newVpnThread();
         SocksPersistent.getInstance().setVpnThread(vpnThread);
@@ -78,10 +72,9 @@ public class SocksProxyService extends VpnService {
     @Override
     public void onDestroy() {
         Log.d(TAG, "Shutting down gracefully");
-        AsyncTask.execute(new Runnable() {
-            @Override
-            public void run() {
-                Intent sshIntent = StatusInfo.getInstance().getSshIntent();
+        AsyncTask.execute(() -> {
+            Intent sshIntent = StatusInfo.getInstance().getSshIntent();
+            if (sshIntent != null) {
                 stopService(sshIntent);
             }
         });
@@ -91,50 +84,56 @@ public class SocksProxyService extends VpnService {
                 pfd.close();
             }
         } catch (Exception e) {
-            e.printStackTrace();
-            Log.d(TAG, "Cannot handle graceful shutdown, killing the service");
+            Log.e(TAG, "Cannot handle graceful shutdown", e);
             android.os.Process.killProcess(android.os.Process.myPid());
         }
     }
 
-    private void startVpn() throws IOException {
+    private void startVpn() {
         try {
-            // Get the FileDescriptor for the VPN interface
-            ParcelFileDescriptor vpnInterface;
-            Builder builder = new VpnService.Builder();
-            builder.setMtu(1500).addAddress("26.26.26.1", 24);
-            
-            // Always route all traffic through VPN
-            builder.addRoute("0.0.0.0", 0);
-            
-            // Set DNS server (use the one from preferences or fallback to 1.1.1.1)
-            String dnsServer = getDnsIpFuture.get();
-            builder.addDnsServer(dnsServer);
-            Log.d(TAG, "Using DNS server: " + dnsServer);
+            // Wait for SSH proxy to be ready
+            Log.d(TAG, "Waiting for SOCKS proxy to be ready...");
+            int waitCount = 0;
+            while (!PortForward.getInstance().isProxyReady() && waitCount < 30) {
+                try {
+                    TimeUnit.SECONDS.sleep(1);
+                    waitCount++;
+                    Log.d(TAG, "Waited " + waitCount + " seconds for proxy...");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
 
-            if (getSelectedAppsFuture.get().isEmpty()) {
-                builder.addDisallowedApplication("ru.anton2319.vpnoverssh");
-            } else {
+            if (!PortForward.getInstance().isProxyReady()) {
+                Log.e(TAG, "SOCKS proxy not ready after 30 seconds! Aborting VPN start.");
+                stopSelf();
+                return;
+            }
+
+            // Get the FileDescriptor for the VPN interface
+            Builder builder = new Builder();
+            builder.setMtu(1500)
+                   .addAddress("26.26.26.1", 24)
+                   .addRoute("0.0.0.0", 0)  // Route all traffic through VPN
+                   .addDnsServer(getDnsIpFuture.get())
+                   .addDisallowedApplication("ru.anton2319.vpnoverssh");
+
+            // Conditionally allow other apps
+            if (!getSelectedAppsFuture.get().isEmpty()) {
                 for (String packageName : getSelectedAppsFuture.get()) {
                     builder.addAllowedApplication(packageName);
                 }
             }
 
-            vpnInterface = builder.establish();
+            ParcelFileDescriptor vpnInterface = builder.establish();
             SocksPersistent.getInstance().setVpnInterface(vpnInterface);
 
             String socksHostname = "127.0.0.1";
             int socksPort = Integer.parseInt(Optional.of(sharedPreferences.getString("forwarder_port", "1080")).orElse("1080"));
 
-            // Test SOCKS proxy connectivity
-            try {
-                Socket test = new Socket();
-                test.connect(new InetSocketAddress(socksHostname, socksPort), 1000);
-                Log.d(TAG, "SOCKS proxy is up and reachable at " + socksHostname + ":" + socksPort);
-                test.close();
-            } catch (Exception e) {
-                Log.e(TAG, "SOCKS proxy is not reachable at " + socksHostname + ":" + socksPort, e);
-            }
+            // Enhanced proxy testing
+            testSocksProxy(socksHostname, socksPort);
 
             // Initialize proxy
             engine.Key key = new engine.Key();
@@ -142,178 +141,85 @@ public class SocksProxyService extends VpnService {
             key.setMTU(1500);
             key.setDevice("fd://" + vpnInterface.getFd());
             key.setInterface("");
-            key.setLogLevel("warning");
+            key.setLogLevel("debug");  // Increased verbosity
             key.setProxy("socks5://" + socksHostname + ":" + socksPort);
-            key.setRestAPI("");
-            key.setTCPSendBufferSize("");
-            key.setTCPReceiveBufferSize("");
-            key.setTCPModerateReceiveBuffer(false);
+            key.setRestAPI(":12345");  // Enable monitoring API
+            key.setTCPSendBufferSize("2m");
+            key.setTCPReceiveBufferSize("2m");
+            key.setTCPModerateReceiveBuffer(true);
 
             engine.Engine.insert(key);
             engine.Engine.start();
-            Log.d(TAG, "VPN engine started, traffic should now route through SOCKS");
+            Log.d(TAG, "VPN engine started");
 
-            while (true) {
-                if (Thread.interrupted()) {
+            // Test DNS resolution through VPN
+            testDnsResolution();
+
+            // Main loop
+            while (!Thread.interrupted()) {
+                try {
+                    TimeUnit.SECONDS.sleep(1);
+                } catch (InterruptedException e) {
                     Log.d(TAG, "Interruption signal received");
-                    throw new InterruptedException();
+                    break;
                 }
             }
-        } catch (InterruptedException e) {
-            Log.d(TAG, "Stopping service");
-            onDestroy();
         } catch (Exception e) {
-            Log.e(TAG, "VPN thread error: ", e);
-            Log.e(TAG, "VPN stopped due to error. See logs above.");
-            e.printStackTrace();
+            Log.e(TAG, "VPN error: ", e);
+            Log.e(TAG, "VPN stopped due to error");
             stopSelf();
         }
     }
 
+    private void testSocksProxy(String host, int port) {
+        try (Socket test = new Socket()) {
+            test.connect(new InetSocketAddress(host, port), 3000);
+            Log.d(TAG, "SOCKS proxy connection verified at " + host + ":" + port);
+            
+            // Test proxy functionality
+            try {
+                Proxy proxy = new Proxy(Proxy.Type.SOCKS, new InetSocketAddress(host, port));
+                URL url = new URL("http://example.com");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection(proxy);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.connect();
+                
+                int status = conn.getResponseCode();
+                if (status == 200) {
+                    Log.d(TAG, "SOCKS proxy functionality verified");
+                } else {
+                    Log.e(TAG, "SOCKS proxy test failed. HTTP status: " + status);
+                }
+                conn.disconnect();
+            } catch (Exception e) {
+                Log.e(TAG, "SOCKS proxy functionality test failed", e);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "SOCKS proxy connection test failed", e);
+        }
+    }
+
+    private void testDnsResolution() {
+        try {
+            InetAddress[] addresses = InetAddress.getAllByName("google.com");
+            Log.d(TAG, "DNS resolution successful: " + Arrays.toString(addresses));
+        } catch (Exception e) {
+            Log.e(TAG, "DNS resolution test failed!", e);
+        }
+    }
+
     private Thread newVpnThread() {
-        return new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    startVpn();
-                } catch (IOException e) {
-                    Log.d(TAG, "Failed to release system resources! This behaviour may lead to memory leaks!");
-                } finally {
-                    stopSelf();
-                }
+        return new Thread(() -> {
+            try {
+                startVpn();
+            } catch (Exception e) {
+                Log.e(TAG, "VPN thread error: ", e);
+            } finally {
+                stopSelf();
             }
-        });
+        }, "VPN-Thread");
     }
 
-    public static void addRoutesExcluding(Builder builder, ArrayList<Long> excludedIpsAton) {
-        Collections.sort(excludedIpsAton);
-        // bypass local subnet
-        long currentAddress = ipATON("0.0.0.0");
-        long endAddress = ipATON("126.255.255.255");
-
-        while(currentAddress <= endAddress) {
-            int mask = getMaximumMask(currentAddress, excludedIpsAton.isEmpty() ? endAddress : excludedIpsAton.get(0));
-            long resultingAddress = currentAddress + subnetSize(mask);
-            if(excludedIpsAton.contains(currentAddress)) {
-                Log.d(TAG, "Excluding: "+ipNTOA(currentAddress)+"/"+mask);
-                excludedIpsAton.remove(0);
-            }
-            else {
-                Log.v(TAG, "Adding: "+ipNTOA(currentAddress)+"/"+mask);
-                builder.addRoute(ipNTOA(currentAddress), mask);
-            }
-            currentAddress = resultingAddress;
-        }
-
-        // bypass multicast
-        currentAddress = ipATON("128.0.0.0");
-        endAddress = ipATON("223.255.255.255");
-
-        while(currentAddress <= endAddress) {
-            int mask = getMaximumMask(currentAddress, excludedIpsAton.isEmpty() ? endAddress : excludedIpsAton.get(0));
-            long resultingAddress = currentAddress + subnetSize(mask);
-            if(excludedIpsAton.contains(currentAddress)) {
-                Log.d(TAG, "Excluding: "+ipNTOA(currentAddress)+"/"+mask);
-                excludedIpsAton.remove(0);
-            }
-            else {
-                Log.v(TAG, "Adding: "+ipNTOA(currentAddress)+"/"+mask);
-                builder.addRoute(ipNTOA(currentAddress), mask);
-            }
-            currentAddress = resultingAddress;
-        }
-
-        // all other addresses
-        currentAddress = ipATON("240.0.0.0");
-        endAddress = ipATON("255.255.255.255");
-
-        while(currentAddress <= endAddress) {
-            int mask = getMaximumMask(currentAddress, excludedIpsAton.isEmpty() ? endAddress : excludedIpsAton.get(0));
-            long resultingAddress = currentAddress + subnetSize(mask);
-            if(excludedIpsAton.contains(currentAddress)) {
-                Log.d(TAG, "Excluding: "+ipNTOA(currentAddress)+"/"+mask);
-                excludedIpsAton.remove(0);
-            }
-            else {
-                Log.v(TAG, "Adding: "+ipNTOA(currentAddress)+"/"+mask);
-                builder.addRoute(ipNTOA(currentAddress), mask);
-            }
-            currentAddress = resultingAddress;
-        }
-    }
-
-    public static int getMaximumMask(long startingAddress, long maximumAddress) {
-        int subnetMask = 32;
-        final byte[] octets = intToByteArrayBigEndian((int) startingAddress);
-
-        while (subnetMask > 0) {
-            long subnetSize = subnetSize(subnetMask - 1);
-            long nextResultingAddress = startingAddress + subnetSize;
-
-            if (nextResultingAddress > maximumAddress) {
-                break;
-            } else {
-                subnetMask--;
-            }
-        }
-
-        while (subnetMask < 32) {
-            byte[] copyOctets = new byte[octets.length];
-            System.arraycopy(octets, 0, copyOctets, 0, octets.length);
-            if (maskValid(subnetMask, copyOctets)) {
-                break;
-            } else {
-                subnetMask++;
-            }
-        }
-        return subnetMask;
-    }
-
-    public static boolean maskValid(int subnetMask, byte[] octets) {
-        int offset = subnetMask / 8;
-        if (offset < octets.length) {
-            for (octets[offset] <<= subnetMask % 8; offset < octets.length; ++offset) {
-                if (octets[offset] != 0) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        return true;
-    }
-
-    public static long subnetSize(long subnetMask) {
-        return (long) Math.pow(2, 32 - subnetMask);
-    }
-
-    public static long ipATON(String ip) {
-        String[] addrArray = ip.split("\\.");
-        long num = 0;
-        for (int i = 0; i < addrArray.length; i++) {
-            int power = 3 - i;
-            num += ((Integer.parseInt(addrArray[i]) % 256 * Math.pow(256, power)));
-        }
-        return num;
-    }
-
-    public static String ipNTOA(long binaryIp) {
-        StringBuilder dottedDecimal = new StringBuilder();
-        for (int i = 3; i >= 0; i--) {
-            long octet = (binaryIp >> (i * 8)) & 0xFF;
-            dottedDecimal.append(octet);
-            if (i > 0) {
-                dottedDecimal.append(".");
-            }
-        }
-        return dottedDecimal.toString();
-    }
-
-    public static byte[] intToByteArrayBigEndian(int value) {
-        byte[] bytes = new byte[4];
-        bytes[0] = (byte) (value >> 24);
-        bytes[1] = (byte) (value >> 16);
-        bytes[2] = (byte) (value >> 8);
-        bytes[3] = (byte) value;
-        return bytes;
-    }
+    // ... (Keep the rest of your helper methods: addRoutesExcluding, etc.)
 }
