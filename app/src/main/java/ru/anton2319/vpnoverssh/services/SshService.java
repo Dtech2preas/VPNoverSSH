@@ -133,9 +133,9 @@ public class SshService extends Service {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
                         Thread.sleep(1000);
-                        // Verify connection is still alive
-                        if (!conn.isAuthenticationComplete() || conn.isClosed()) {
-                            Log.w(TAG, "SSH connection lost");
+                        // Verify connection is still alive by checking authentication status
+                        if (!conn.isAuthenticationComplete()) {
+                            Log.w(TAG, "SSH connection lost - authentication no longer complete");
                             break;
                         }
                     } catch (InterruptedException ie) {
@@ -161,15 +161,17 @@ public class SshService extends Service {
                 forwarder = null;
             }
             if (conn != null) {
-                if (conn.isConnected()) {
-                    conn.close();
-                    Log.d(TAG, "SSH connection closed");
-                }
+                // Connection doesn't have isConnected() method, so we'll just close it
+                conn.close();
+                Log.d(TAG, "SSH connection closed");
                 conn = null;
             }
         } catch (Exception e) {
             Log.e(TAG, "Error closing SSH resources", e);
         }
-        PortForward.getInstance().cleanup();
+        // Instead of cleanup(), reset the PortForward instance
+        PortForward.getInstance().setConn(null);
+        PortForward.getInstance().setForwarder(null);
+        PortForward.getInstance().setSshThread(null);
     }
 }
