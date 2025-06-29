@@ -11,7 +11,7 @@ import androidx.preference.PreferenceManager;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.InetAddress; // Add this import
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.Socket;
@@ -51,8 +51,7 @@ public class SocksProxyService extends VpnService {
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         getSelectedAppsFuture = getSelectedApps(sharedPreferences);
         getDnsIpFuture = getDnsIp(sharedPreferences);
-        
-        // Start the VPN thread
+
         vpnThread = newVpnThread();
         SocksPersistent.getInstance().setVpnThread(vpnThread);
         vpnThread.start();
@@ -92,18 +91,12 @@ public class SocksProxyService extends VpnService {
 
     private void startVpn() {
         try {
-            // Wait for SSH proxy to be ready
             Log.d(TAG, "Waiting for SOCKS proxy to be ready...");
             int waitCount = 0;
             while (!PortForward.getInstance().isProxyReady() && waitCount < 30) {
-                try {
-                    TimeUnit.SECONDS.sleep(1);
-                    waitCount++;
-                    Log.d(TAG, "Waited " + waitCount + " seconds for proxy...");
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
+                TimeUnit.SECONDS.sleep(1);
+                waitCount++;
+                Log.d(TAG, "Waited " + waitCount + " seconds for proxy...");
             }
 
             if (!PortForward.getInstance().isProxyReady()) {
@@ -112,15 +105,13 @@ public class SocksProxyService extends VpnService {
                 return;
             }
 
-            // Get the FileDescriptor for the VPN interface
             Builder builder = new Builder();
             builder.setMtu(1500)
                    .addAddress("26.26.26.1", 24)
-                   .addRoute("0.0.0.0", 0)  // Route all traffic through VPN
+                   .addRoute("0.0.0.0", 0)
                    .addDnsServer(getDnsIpFuture.get())
                    .addDisallowedApplication("ru.anton2319.vpnoverssh");
 
-            // Conditionally allow other apps
             if (!getSelectedAppsFuture.get().isEmpty()) {
                 for (String packageName : getSelectedAppsFuture.get()) {
                     builder.addAllowedApplication(packageName);
@@ -133,30 +124,26 @@ public class SocksProxyService extends VpnService {
             String socksHostname = "127.0.0.1";
             int socksPort = Integer.parseInt(Optional.of(sharedPreferences.getString("forwarder_port", "1080")).orElse("1080"));
 
-            // Enhanced proxy testing
             testSocksProxy(socksHostname, socksPort);
 
-            // Initialize proxy
             engine.Key key = new engine.Key();
             key.setMark(0);
             key.setMTU(1500);
             key.setDevice("fd://" + vpnInterface.getFd());
             key.setInterface("");
-            key.setLogLevel("debug");  // Increased verbosity
+            key.setLogLevel("info");
             key.setProxy("socks5://" + socksHostname + ":" + socksPort);
-            key.setRestAPI(":12345");  // Enable monitoring API
-            key.setTCPSendBufferSize("2m");
-            key.setTCPReceiveBufferSize("2m");
+            key.setRestAPI("");
+            key.setTCPSendBufferSize("1m");
+            key.setTCPReceiveBufferSize("1m");
             key.setTCPModerateReceiveBuffer(true);
 
             engine.Engine.insert(key);
             engine.Engine.start();
             Log.d(TAG, "VPN engine started");
 
-            // Test DNS resolution through VPN
             testDnsResolution();
 
-            // Main loop
             while (!Thread.interrupted()) {
                 try {
                     TimeUnit.SECONDS.sleep(1);
@@ -177,7 +164,6 @@ public class SocksProxyService extends VpnService {
             test.connect(new InetSocketAddress(host, port), 3000);
             Log.d(TAG, "SOCKS proxy connection verified at " + host + ":" + port);
             
-            // Test proxy functionality
             try {
                 Proxy proxy = new Proxy(Proxy.Type.SOCKS, new InetSocketAddress(host, port));
                 URL url = new URL("http://example.com");
@@ -221,6 +207,4 @@ public class SocksProxyService extends VpnService {
             }
         }, "VPN-Thread");
     }
-
-    // ... (Keep the rest of your helper methods: addRoutesExcluding, etc.)
 }
