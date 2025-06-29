@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Optional;
 
-import ru.anton2319.vpnoverssh.data.model.SSHAccount;
 import ru.anton2319.vpnoverssh.data.singleton.PortForward;
 
 public class SshService extends Service {
@@ -48,15 +47,22 @@ public class SshService extends Service {
         return START_STICKY;
     }
 
-    private void initiateSSH(SSHAccount account) throws IOException, RuntimeException {
-        Log.d(TAG, "Starting SSH service for account: " + account.getNickname());
+    private void initiateSSH(Intent intent) throws IOException, RuntimeException {
+        Log.d(TAG, "Starting SSH service");
 
-        String username = account.getUsername();
-        String host = account.getServer();
-        String password = account.getPassword();
-        String privateKey = account.getPrivateKey();
-        int port = account.getPort();
-        String sniHost = account.getSniHost();
+        String user = intent.getStringExtra("user");
+        String host = intent.getStringExtra("hostname");
+        String password = intent.getStringExtra("password");
+        String portStr = intent.getStringExtra("port");
+        String privateKey = intent.getStringExtra("privateKey");
+        String sniHost = intent.getStringExtra("sni");
+
+        int port = 22;
+        try {
+            port = Integer.parseInt(Optional.ofNullable(portStr).orElse("22"));
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "Invalid port, defaulting to 22");
+        }
 
         conn = new Connection(host, port);
         
@@ -73,13 +79,13 @@ public class SshService extends Service {
         boolean isAuthenticated = false;
         if (privateKey != null && !privateKey.isEmpty()) {
             Log.d(TAG, "Attempting public key authentication");
-            isAuthenticated = conn.authenticateWithPublicKey(username, privateKey.toCharArray(), "");
+            isAuthenticated = conn.authenticateWithPublicKey(user, privateKey.toCharArray(), "");
         } else if (password != null && !password.isEmpty()) {
             Log.d(TAG, "Attempting password authentication");
-            isAuthenticated = conn.authenticateWithPassword(username, password);
+            isAuthenticated = conn.authenticateWithPassword(user, password);
         } else {
             Log.d(TAG, "Attempting none authentication");
-            isAuthenticated = conn.authenticateWithNone(username);
+            isAuthenticated = conn.authenticateWithNone(user);
         }
 
         if (!isAuthenticated) {
@@ -129,8 +135,7 @@ public class SshService extends Service {
         return new Thread(() -> {
             try {
                 System.setProperty("user.home", getFilesDir().getAbsolutePath());
-                SSHAccount account = (SSHAccount) intent.getSerializableExtra("ssh_account");
-                initiateSSH(account);
+                initiateSSH(intent);
 
                 // Keep thread alive until interrupted
                 while (!Thread.currentThread().isInterrupted()) {
