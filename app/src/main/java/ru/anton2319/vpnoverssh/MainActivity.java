@@ -10,6 +10,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.Spinner;
 
@@ -35,8 +36,8 @@ public class MainActivity extends AppCompatActivity {
     private String privateKey;
 
     Intent vpnIntent;
-
     Intent sshIntent;
+    EditText sniInput;
 
     MutableLiveData<String> connectButtonData = new MutableLiveData<>();
 
@@ -49,11 +50,12 @@ public class MainActivity extends AppCompatActivity {
         if(StatusInfo.getInstance().getSshIntent() == null) {
             StatusInfo.getInstance().setSshIntent(new Intent(this, SshService.class));
         }
-        EditText sniInput = findViewById(R.id.sni_input);
+        
+        setContentView(R.layout.activity_main);
+        
+        sniInput = findViewById(R.id.sni_input);
         vpnIntent = StatusInfo.getInstance().getVpnIntent();
         sshIntent = StatusInfo.getInstance().getSshIntent();
-
-        setContentView(R.layout.activity_main);
 
         Context context = this;
 
@@ -77,7 +79,6 @@ public class MainActivity extends AppCompatActivity {
 
         ImageButton editButton = findViewById(R.id.editProfileButton);
 
-        //noinspection Convert2Lambda
         editButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -91,7 +92,6 @@ public class MainActivity extends AppCompatActivity {
 
         ImageButton addButton = findViewById(R.id.addProfileButton);
 
-        //noinspection Convert2Lambda
         addButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -101,7 +101,6 @@ public class MainActivity extends AppCompatActivity {
         });
 
         Button connectButton = findViewById(R.id.ssh_connect_button);
-        //noinspection Convert2Lambda
         connectButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -111,7 +110,8 @@ public class MainActivity extends AppCompatActivity {
                     privateKey = selectedProfile.getPrivateKey();
                     String hostname = selectedProfile.getServerIP();
                     int port = selectedProfile.getServerPort();
-                    startVpn(username, password, privateKey, hostname, port);
+                    String sniHost = sniInput.getText().toString().trim();
+                    startVpn(username, password, privateKey, hostname, port, sniHost);
                 }
                 else {
                     Intent intent = new Intent(context, NewConnectionActivity.class);
@@ -163,12 +163,11 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, resultData);
     }
 
-    private void startVpn(String username, String password, String privateKey, String hostname, int port) {
+    private void startVpn(String username, String password, String privateKey, String hostname, int port, String sniHost) {
         if(!StatusInfo.getInstance().isActive()) {
             Log.d(TAG, "Preparing VpnService");
             Intent intentPrepare = VpnService.prepare(this);
             if (intentPrepare != null) {
-                // TODO: replace deprecated method
                 StatusInfo.getInstance().setActive(false);
                 Log.d(TAG, "Toggled off due to missing permission");
                 startActivityForResult(intentPrepare, 0);
@@ -191,6 +190,11 @@ public class MainActivity extends AppCompatActivity {
                 else {
                     sshIntent.putExtra("port", String.valueOf(22));
                 }
+                
+                if (!sniHost.isEmpty()) {
+                    sshIntent.putExtra("sni", sniHost);
+                }
+                
                 startService(sshIntent);
 
                 Log.d(TAG, "Starting proxy");
@@ -215,7 +219,7 @@ public class MainActivity extends AppCompatActivity {
             stopService(sshIntent);
         }
     }
-    /** @noinspection SameParameterValue*/
+
     private static boolean between(int variable, int minValueInclusive, int maxValueInclusive) {
         return variable >= minValueInclusive && variable <= maxValueInclusive;
     }
