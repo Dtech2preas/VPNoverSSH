@@ -1,4 +1,86 @@
-<?xml version="1.0" encoding="utf-8"?>
+y<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scrollView"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- 1) Connection Status -->
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Status: Disconnected"
+            android:textSize="18sp"
+            android:padding="12dp"
+            android:background="#22000000" />
+
+        <!-- 2) Profile Selector -->
+        <Spinner
+            android:id="@+id/spinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"/>
+
+        <!-- Edit/Add Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end"
+            android:layout_marginTop="8dp">
+
+            <ImageButton
+                android:id="@+id/addProfileButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@android:drawable/ic_menu_add"
+                android:contentDescription="Add" />
+
+            <ImageButton
+                android:id="@+id/editProfileButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@android:drawable/ic_menu_edit"
+                android:contentDescription="Edit"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+        <!-- 3) SNI Input -->
+        <EditText
+            android:id="@+id/sni_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="SNI Host (e.g. onlinecms.mtn.co.za)"
+            android:layout_marginTop="16dp"
+            android:padding="12dp"/>
+
+        <!-- 4) Connect Button -->
+        <Button
+            android:id="@+id/ssh_connect_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Connect"
+            android:layout_marginTop="16dp"/>
+
+        <!-- 5) Live Logs -->
+        <TextView
+            android:id="@+id/tvLogs"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:layout_marginTop="16dp"
+            android:background="#222"
+            android:padding="8dp"
+            android:text="Logs will appear here..."
+            android:textColor="#0f0"
+            android:textSize="12sp" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView><?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout 
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
