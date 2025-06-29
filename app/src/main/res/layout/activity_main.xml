@@ -1,106 +1,252 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/scrollView"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:background="@color/surface_container"
+    android:fitsSystemWindows="true">
 
-    <LinearLayout
+    <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
 
-        <!-- 1) Connection Status -->
-        <TextView
-            android:id="@+id/tvStatus"
+        <androidx.appcompat.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@color/surface"
+            app:title="VPN over SSH"
+            app:titleTextColor="@color/on_surface"
+            app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scrollView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Status: Disconnected"
-            android:textSize="18sp"
-            android:padding="12dp"
-            android:background="#22000000" />
+            android:orientation="vertical">
 
-        <!-- 2) Profile Selector Card -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            app:cardCornerRadius="8dp"
-            app:cardElevation="4dp">
+            <!-- Connection Animation -->
+            <com.airbnb.lottie.LottieAnimationView
+                android:id="@+id/animation_view"
+                android:layout_width="150dp"
+                android:layout_height="150dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginVertical="8dp" />
 
-            <LinearLayout
+            <!-- Connection Status -->
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/tvStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="12dp">
+                android:text="Status: Disconnected"
+                android:textAlignment="center"
+                android:textSize="18sp"
+                android:textColor="@color/disconnected_red"
+                android:layout_marginBottom="16dp"
+                android:padding="8dp"
+                app:cornerRadius="8dp"
+                app:strokeColor="@color/outline"
+                app:strokeWidth="1dp"/>
 
-                <Spinner
-                    android:id="@+id/spinner"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
+            <!-- Account Selector Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardElevation="2dp"
+                app:cardCornerRadius="12dp"
+                app:cardBackgroundColor="@color/surface_container_high"
+                android:layout_marginBottom="16dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:gravity="end"
-                    android:orientation="horizontal">
+                    android:orientation="vertical"
+                    android:padding="16dp">
 
-                    <ImageButton
-                        android:id="@+id/addProfileButton"
-                        android:layout_width="wrap_content"
+                    <TextView
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:contentDescription="Add"
-                        app:srcCompat="@drawable/baseline_add_24" />
+                        android:text="SELECT ACCOUNT"
+                        android:textColor="@color/primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp"/>
 
-                    <ImageButton
-                        android:id="@+id/editProfileButton"
-                        android:layout_width="wrap_content"
+                    <Spinner
+                        android:id="@+id/spinner"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:contentDescription="Edit"
-                        app:srcCompat="@drawable/baseline_edit_24" />
+                        android:background="@drawable/spinner_background"/>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:gravity="end"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.imageview.ShapeableImageView
+                            android:id="@+id/addProfileButton"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:src="@drawable/ic_add"
+                            app:strokeColor="@color/outline"
+                            app:strokeWidth="1dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.Circle"/>
+
+                        <com.google.android.material.imageview.ShapeableImageView
+                            android:id="@+id/editProfileButton"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="12dp"
+                            android:src="@drawable/ic_edit"
+                            app:strokeColor="@color/outline"
+                            app:strokeWidth="1dp"
+                            app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.Circle"/>
+
+                    </LinearLayout>
                 </LinearLayout>
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
+            </com.google.android.material.card.MaterialCardView>
 
-        <!-- 3) SNI Input Card -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            app:cardCornerRadius="8dp"
-            app:cardElevation="2dp">
-
-            <EditText
-                android:id="@+id/sni_input"
+            <!-- Account Details Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/account_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="SNI Host (e.g. www.freesite.com)"
-                android:padding="12dp" />
-        </androidx.cardview.widget.CardView>
+                app:cardElevation="2dp"
+                app:cardCornerRadius="12dp"
+                android:visibility="gone"
+                android:layout_marginBottom="16dp">
 
-        <!-- 4) Connect Button -->
-        <Button
-            android:id="@+id/ssh_connect_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Connect" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
 
-        <!-- 5) Live Logs -->
-        <TextView
-            android:id="@+id/tvLogs"
-            android:layout_width="match_parent"
-            android:layout_height="200dp"
-            android:layout_marginTop="16dp"
-            android:background="#222"
-            android:overScrollMode="always"
-            android:padding="8dp"
-            android:scrollbars="vertical"
-            android:text="Logs will appear here..."
-            android:textColor="#0f0"
-            android:textSize="12sp" />
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+                    <TextView
+                        android:id="@+id/account_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/on_surface"/>
+
+                    <TextView
+                        android:id="@+id/account_details"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textSize="14sp"
+                        android:textColor="@color/on_surface_variant"/>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- SNI Input Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/sni_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardElevation="2dp"
+                app:cardCornerRadius="12dp"
+                android:layout_marginBottom="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="SNI HOST"
+                        android:textColor="@color/primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp"/>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="e.g. onlinecms.mtn.co.za">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/sni_input"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textUri"/>
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Connect Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ssh_connect_button"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="CONNECT"
+                android:textAllCaps="true"
+                android:textSize="16sp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                app:icon="@drawable/ic_connect"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                app:iconTint="@color/on_primary"
+                app:backgroundTint="@color/primary"
+                android:textColor="@color/on_primary"
+                app:cornerRadius="10dp"
+                android:layout_marginTop="8dp"/>
+
+            <!-- Logs Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardElevation="2dp"
+                app:cardCornerRadius="12dp"
+                android:layout_marginTop="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="CONNECTION LOGS"
+                        android:textColor="@color/primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp"/>
+
+                    <TextView
+                        android:id="@+id/tvLogs"
+                        android:layout_width="match_parent"
+                        android:layout_height="200dp"
+                        android:background="@color/surface_container"
+                        android:text="Logs will appear here...\n"
+                        android:textColor="@color/on_surface"
+                        android:textSize="12sp"
+                        android:padding="8dp"
+                        android:scrollbars="vertical"/>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
