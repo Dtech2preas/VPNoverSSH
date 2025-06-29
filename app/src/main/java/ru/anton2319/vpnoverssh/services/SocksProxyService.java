@@ -7,7 +7,7 @@ import android.os.AsyncTask;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
-import androidx.preference.PferenceManager;
+import androidx.preference.PreferenceManager;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
