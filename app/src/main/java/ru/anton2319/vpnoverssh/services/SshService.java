@@ -24,15 +24,16 @@ public class SshService extends Service {
     DynamicPortForwarder forwarder;
     SharedPreferences sharedPreferences;
 
-
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
-        // Start the SSH tunneling code
+
+        // Stop any existing SSH thread
         sshThread = PortForward.getInstance().getSshThread();
         if (sshThread != null) {
             sshThread.interrupt();
         }
+
         sshThread = newSshThread(intent);
         PortForward.getInstance().setSshThread(sshThread);
         sshThread.start();
@@ -41,65 +42,61 @@ public class SshService extends Service {
     }
 
     public void initiateSSH(Intent intent) throws IOException, RuntimeException {
-        Log.d(TAG, "Starting trilead.ssh2 service");
+        Log.d(TAG, "Starting trilead.ssh2 SSH service");
 
         String user = intent.getStringExtra("user");
         String host = intent.getStringExtra("hostname");
         String password = intent.getStringExtra("password");
-        //noinspection DataFlowIssue
-        int port = Integer.parseInt(Optional.of(intent.getStringExtra("port")).orElse(String.valueOf(22)));
+        String portStr = intent.getStringExtra("port");
         String privateKey = intent.getStringExtra("privateKey");
+
+        int port = 22;
+        try {
+            port = Integer.parseInt(Optional.ofNullable(portStr).orElse("22"));
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "Invalid port, defaulting to 22");
+        }
 
         conn = new Connection(host, port);
         conn.connect();
         PortForward.getInstance().setConn(conn);
 
-        // Authenticate with the SSH server
-
-        int attempts = 1;
+        // Authentication
         boolean isAuthenticated = false;
-
-        while (attempts-- > 0) {
-            if (password == null && privateKey == null) {
-                isAuthenticated = conn.authenticateWithNone(user);
-            }
-
-            if (privateKey != null && password != null) {
-                isAuthenticated = conn.authenticateWithPublicKey(user, privateKey.toCharArray(), "");
-                if (isAuthenticated) {
-                    break;
-                }
-                isAuthenticated = conn.authenticateWithPassword(user, password);
-                if (!isAuthenticated) {
-                    throw new RuntimeException("Cannot authenticate with the provided credentials");
-                }
-            }
-
-            if (privateKey != null) {
-                isAuthenticated = conn.authenticateWithPublicKey(user, privateKey.toCharArray(), "");
-            }
-
-            if (password != null) {
-                isAuthenticated = conn.authenticateWithPassword(user, password);
-            }
-
-            if(isAuthenticated) {
-                break;
-            }
+        if (privateKey != null && !privateKey.isEmpty()) {
+            Log.d(TAG, "Attempting public key authentication");
+            isAuthenticated = conn.authenticateWithPublicKey(user, privateKey.toCharArray(), "");
+        } else if (password != null && !password.isEmpty()) {
+            Log.d(TAG, "Attempting password authentication");
+            isAuthenticated = conn.authenticateWithPassword(user, password);
+        } else {
+            Log.d(TAG, "Attempting none authentication");
+            isAuthenticated = conn.authenticateWithNone(user);
         }
 
         if (!isAuthenticated) {
-            throw new RuntimeException("Cannot authenticate with the provided credentials");
+            throw new RuntimeException("Authentication failed: check username, password, or key");
         }
 
-        // TODO: assign port automatically instead of using 1080
-        forwarder = conn.createDynamicPortForwarder(Integer.parseInt(Optional.of(sharedPreferences.getString("forwarder_port", "1080")).orElse("1080")));
+        Log.d(TAG, "Authentication successful. Creating SOCKS proxy...");
+
+        int forwardPort = 1080;
+        try {
+            forwardPort = Integer.parseInt(sharedPreferences.getString("forwarder_port", "1080"));
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "Invalid forwarder port, defaulting to 1080");
+        }
+
+        // Bind SOCKS proxy to 127.0.0.1 explicitly
+        forwarder = conn.createDynamicPortForwarder("127.0.0.1", forwardPort);
         PortForward.getInstance().setForwarder(forwarder);
+
+        Log.d(TAG, "SOCKS proxy running on 127.0.0.1:" + forwardPort);
     }
 
     @Override
     public void onDestroy() {
-        Log.d(TAG, "Shutting down gracefully");
+        Log.d(TAG, "SSH service stopping...");
         sshThread = PortForward.getInstance().getSshThread();
         if (sshThread != null) {
             sshThread.interrupt();
@@ -112,28 +109,36 @@ public class SshService extends Service {
     }
 
     public Thread newSshThread(Intent intent) {
-        //noinspection Convert2Lambda
-        return new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    System.setProperty("user.home", getFilesDir().getAbsolutePath());
-                    initiateSSH(intent);
-                    while (true) {
-                        if (Thread.interrupted()) {
-                            throw new InterruptedException();
-                        }
+        return new Thread(() -> {
+            try {
+                System.setProperty("user.home", getFilesDir().getAbsolutePath());
+                initiateSSH(intent);
+
+                // Keep thread alive until interrupted
+                while (!Thread.currentThread().isInterrupted()) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        break;
                     }
-                } catch (IOException | RuntimeException e) {
-                    e.printStackTrace();
-                    Log.d(TAG, "trilead.ssh2 failed, and there is no fallback yet ¯\\_(ツ)_/¯");
-                } catch (InterruptedException e) {
-                    conn = PortForward.getInstance().getConn();
-                    forwarder = PortForward.getInstance().getForwarder();
-                    conn.close();
-                    forwarder.close();
-                    stopSelf();
                 }
+
+            } catch (IOException | RuntimeException e) {
+                Log.e(TAG, "SSH Error: ", e);
+            } finally {
+                try {
+                    if (forwarder != null) {
+                        forwarder.close();
+                        Log.d(TAG, "SOCKS proxy closed");
+                    }
+                    if (conn != null) {
+                        conn.close();
+                        Log.d(TAG, "SSH connection closed");
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Error closing SSH resources", e);
+                }
+                stopSelf();
             }
         });
     }
