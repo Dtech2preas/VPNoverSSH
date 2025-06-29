@@ -12,6 +12,7 @@ import com.trilead.ssh2.Connection;
 import com.trilead.ssh2.DynamicPortForwarder;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.Optional;
 
 import ru.anton2319.vpnoverssh.data.singleton.PortForward;
@@ -19,19 +20,24 @@ import ru.anton2319.vpnoverssh.data.singleton.PortForward;
 public class SshService extends Service {
 
     private static final String TAG = "SshService";
-    Thread sshThread;
-    Connection conn;
-    DynamicPortForwarder forwarder;
-    SharedPreferences sharedPreferences;
+    private Thread sshThread;
+    private Connection conn;
+    private DynamicPortForwarder forwarder;
+    private SharedPreferences sharedPreferences;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
 
         // Stop any existing SSH thread
-        sshThread = PortForward.getInstance().getSshThread();
-        if (sshThread != null) {
-            sshThread.interrupt();
+        Thread existingThread = PortForward.getInstance().getSshThread();
+        if (existingThread != null && existingThread.isAlive()) {
+            existingThread.interrupt();
+            try {
+                existingThread.join(1000); // Wait for thread to finish
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Interrupted while waiting for thread to stop");
+            }
         }
 
         sshThread = newSshThread(intent);
@@ -41,7 +47,7 @@ public class SshService extends Service {
         return START_STICKY;
     }
 
-    public void initiateSSH(Intent intent) throws IOException, RuntimeException {
+    private void initiateSSH(Intent intent) throws IOException, RuntimeException {
         Log.d(TAG, "Starting trilead.ssh2 SSH service");
 
         String user = intent.getStringExtra("user");
@@ -58,7 +64,7 @@ public class SshService extends Service {
         }
 
         conn = new Connection(host, port);
-        conn.connect();
+        conn.connect(null, 30000, 30000); // Added timeout parameters (30 seconds)
         PortForward.getInstance().setConn(conn);
 
         // Authentication
@@ -87,20 +93,29 @@ public class SshService extends Service {
             Log.e(TAG, "Invalid forwarder port, defaulting to 1080");
         }
 
-        // Bind SOCKS proxy to 127.0.0.1 explicitly
-        forwarder = conn.createDynamicPortForwarder("127.0.0.1", forwardPort);
-        PortForward.getInstance().setForwarder(forwarder);
-
-        Log.d(TAG, "SOCKS proxy running on 127.0.0.1:" + forwardPort);
+        // Updated port forwarding implementation
+        try {
+            forwarder = conn.createDynamicPortForwarder(new InetSocketAddress("127.0.0.1", forwardPort));
+            PortForward.getInstance().setForwarder(forwarder);
+            Log.d(TAG, "SOCKS proxy successfully started on 127.0.0.1:" + forwardPort);
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to create SOCKS proxy", e);
+            throw new RuntimeException("Failed to create SOCKS proxy: " + e.getMessage());
+        }
     }
 
     @Override
     public void onDestroy() {
         Log.d(TAG, "SSH service stopping...");
-        sshThread = PortForward.getInstance().getSshThread();
-        if (sshThread != null) {
+        if (sshThread != null && sshThread.isAlive()) {
             sshThread.interrupt();
+            try {
+                sshThread.join(1000); // Wait for thread to finish
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Interrupted while waiting for thread to stop");
+            }
         }
+        cleanupResources();
     }
 
     @Override
@@ -108,7 +123,7 @@ public class SshService extends Service {
         return null;
     }
 
-    public Thread newSshThread(Intent intent) {
+    private Thread newSshThread(Intent intent) {
         return new Thread(() -> {
             try {
                 System.setProperty("user.home", getFilesDir().getAbsolutePath());
@@ -118,7 +133,13 @@ public class SshService extends Service {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
                         Thread.sleep(1000);
+                        // Verify connection is still alive
+                        if (!conn.isAuthenticationComplete() || conn.isClosed()) {
+                            Log.w(TAG, "SSH connection lost");
+                            break;
+                        }
                     } catch (InterruptedException ie) {
+                        Log.d(TAG, "SSH thread interrupted");
                         break;
                     }
                 }
@@ -126,20 +147,29 @@ public class SshService extends Service {
             } catch (IOException | RuntimeException e) {
                 Log.e(TAG, "SSH Error: ", e);
             } finally {
-                try {
-                    if (forwarder != null) {
-                        forwarder.close();
-                        Log.d(TAG, "SOCKS proxy closed");
-                    }
-                    if (conn != null) {
-                        conn.close();
-                        Log.d(TAG, "SSH connection closed");
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Error closing SSH resources", e);
-                }
+                cleanupResources();
                 stopSelf();
             }
-        });
+        }, "SSH-Connection-Thread");
+    }
+
+    private void cleanupResources() {
+        try {
+            if (forwarder != null) {
+                forwarder.close();
+                Log.d(TAG, "SOCKS proxy closed");
+                forwarder = null;
+            }
+            if (conn != null) {
+                if (conn.isConnected()) {
+                    conn.close();
+                    Log.d(TAG, "SSH connection closed");
+                }
+                conn = null;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error closing SSH resources", e);
+        }
+        PortForward.getInstance().cleanup();
     }
 }
