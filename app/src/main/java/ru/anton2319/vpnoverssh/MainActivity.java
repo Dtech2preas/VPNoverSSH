@@ -49,7 +49,7 @@ public class MainActivity extends AppCompatActivity {
         if(StatusInfo.getInstance().getSshIntent() == null) {
             StatusInfo.getInstance().setSshIntent(new Intent(this, SshService.class));
         }
-
+        EditText sniInput = findViewById(R.id.sni_input);
         vpnIntent = StatusInfo.getInstance().getVpnIntent();
         sshIntent = StatusInfo.getInstance().getSshIntent();
 
